@@ -8,6 +8,14 @@ export const splitModel = (model: string | undefined) => {
   }
 }
 
+export const isSelectableModel = (
+  provider: string,
+  model: string,
+  availableModels: Readonly<Record<string, unknown>> | undefined,
+) =>
+  // Native OpenCode models are not always included in the provider state.
+  provider === "opencode" || availableModels?.[model] !== undefined
+
 type AgentConfig = {
   model?: string
   disable?: boolean

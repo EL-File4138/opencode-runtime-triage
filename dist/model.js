@@ -9,6 +9,9 @@ export const splitModel = (model) => {
         model: model.slice(separator + 1),
     };
 };
+export const isSelectableModel = (provider, model, availableModels) => 
+// Native OpenCode models are not always included in the provider state.
+provider === "opencode" || availableModels?.[model] !== undefined;
 export const matchingProviderOverrides = (agents, runtimeModels, sourceProvider, targetProvider, targetModels) => [...agents].flatMap(([agent, config]) => {
     if (config.disable)
         return [];

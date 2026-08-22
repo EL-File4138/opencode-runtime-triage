@@ -1,6 +1,6 @@
 {
   "name": "opencode-runtime-triage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Runtime-only per-agent model and provider overrides for the OpenCode TUI",
   "type": "module",
   "main": "./dist/server.js",

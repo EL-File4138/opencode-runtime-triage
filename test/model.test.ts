@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { matchingProviderOverrides, splitModel } from "../src/model.js"
+import {
+  isSelectableModel,
+  matchingProviderOverrides,
+  splitModel,
+} from "../src/model.js"
 
 describe("splitModel", () => {
   test("splits only on the first slash", () => {
@@ -13,6 +17,23 @@ describe("splitModel", () => {
     expect(splitModel("provider")).toBeUndefined()
     expect(splitModel("/model")).toBeUndefined()
     expect(splitModel("provider/")).toBeUndefined()
+  })
+})
+
+describe("isSelectableModel", () => {
+  test("allows native OpenCode models without a provider-state entry", () => {
+    expect(isSelectableModel("opencode", "gpt-5-nano", undefined)).toBe(true)
+  })
+
+  test("requires external models to be present in provider state", () => {
+    expect(isSelectableModel("anthropic", "claude-sonnet", undefined)).toBe(
+      false,
+    )
+    expect(
+      isSelectableModel("anthropic", "claude-sonnet", {
+        "claude-sonnet": {},
+      }),
+    ).toBe(true)
   })
 })
 

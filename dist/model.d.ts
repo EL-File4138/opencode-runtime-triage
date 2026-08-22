@@ -2,6 +2,7 @@ export declare const splitModel: (model: string | undefined) => {
     provider: string;
     model: string;
 } | undefined;
+export declare const isSelectableModel: (provider: string, model: string, availableModels: Readonly<Record<string, unknown>> | undefined) => boolean;
 type AgentConfig = {
     model?: string;
     disable?: boolean;

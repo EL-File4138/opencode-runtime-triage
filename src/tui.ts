@@ -3,7 +3,11 @@ import type {
   TuiPlugin,
   TuiPluginModule,
 } from "@opencode-ai/plugin/tui"
-import { matchingProviderOverrides, splitModel } from "./model.js"
+import {
+  isSelectableModel,
+  matchingProviderOverrides,
+  splitModel,
+} from "./model.js"
 import {
   clearRuntimeModels,
   getRuntimeModels,
@@ -62,10 +66,12 @@ const tui: TuiPlugin = async (api, rawOptions) => {
     return result.error
   }
 
-  const applyPreset = async (agent: string, preset: ModelPreset | null) => {
+  const applyModel = async (agent: string, selection: ModelPreset | null) => {
     api.ui.dialog.clear()
     const directory = api.state.path.directory
-    const model = preset ? `${preset.provider}/${preset.model}` : undefined
+    const model = selection
+      ? `${selection.provider}/${selection.model}`
+      : undefined
     const previous = getRuntimeModels(directory)?.get(agent)
     if (model) setRuntimeModel(directory, agent, model)
     else restoreRuntimeModel(directory, agent, undefined)
@@ -91,7 +97,7 @@ const tui: TuiPlugin = async (api, rawOptions) => {
     }
   }
 
-  const selectPreset = (agent: string) => {
+  const selectModel = (agent: string) => {
     const directory = api.state.path.directory
     const current =
       getRuntimeModels(directory)?.get(agent) ??
@@ -99,7 +105,23 @@ const tui: TuiPlugin = async (api, rawOptions) => {
     const providerAvailable = new Map(
       api.state.provider.map((provider) => [provider.id, provider.models]),
     )
-    const presetOptions: TuiDialogSelectOption<ModelPreset | null>[] = [
+    const models = new Map<string, ModelPreset>(
+      api.state.provider.flatMap((provider) =>
+        Object.entries(provider.models).map(([model, details]) => [
+          `${provider.id}/${model}`,
+          {
+            label: details.name,
+            provider: provider.id,
+            model,
+          },
+        ]),
+      ),
+    )
+    for (const preset of presets) {
+      models.set(`${preset.provider}/${preset.model}`, preset)
+    }
+
+    const modelOptions: TuiDialogSelectOption<ModelPreset | null>[] = [
       {
         title: "Use configured model",
         value: null,
@@ -107,32 +129,45 @@ const tui: TuiPlugin = async (api, rawOptions) => {
         category: "Runtime",
         disabled: !getRuntimeModels(directory)?.has(agent),
       },
-      ...presets.map((preset) => ({
-        title: preset.label,
-        value: preset,
-        description: preset.description ?? `${preset.provider}/${preset.model}`,
-        category: preset.provider,
-        disabled: !providerAvailable.get(preset.provider)?.[preset.model],
-      })),
+      ...[...models.values()]
+        .map((selection) => ({
+          title: selection.label,
+          value: selection,
+          description:
+            selection.description ?? `${selection.provider}/${selection.model}`,
+          category: selection.provider,
+          disabled: !isSelectableModel(
+            selection.provider,
+            selection.model,
+            providerAvailable.get(selection.provider),
+          ),
+        }))
+        .sort((left, right) =>
+          left.category === right.category
+            ? left.title.localeCompare(right.title)
+            : left.category.localeCompare(right.category),
+        ),
     ]
 
     api.ui.dialog.replace(() =>
       api.ui.DialogSelect({
         title: `Model for ${agent}`,
-        placeholder: "Search predefined models",
-        current:
-          presets.find(
-            (preset) => `${preset.provider}/${preset.model}` === current,
-          ) ?? null,
-        options: presetOptions,
-        onSelect: (option) => void applyPreset(agent, option.value),
+        placeholder: "Search available models",
+        current: current ? models.get(current) ?? null : null,
+        options: modelOptions,
+        onSelect: (option) => void applyModel(agent, option.value),
       }),
     )
   }
 
   const selectAgent = () => {
-    if (presets.length === 0) {
-      showError("No valid presets are configured")
+    if (
+      presets.length === 0 &&
+      api.state.provider.every(
+        (provider) => !Object.keys(provider.models).length,
+      )
+    ) {
+      showError("No provider models are available")
       return
     }
 
@@ -156,7 +191,7 @@ const tui: TuiPlugin = async (api, rawOptions) => {
           description:
             runtimeModels?.get(name) ?? config.model ?? "Uses the default model",
         })),
-        onSelect: (option) => selectPreset(option.value),
+        onSelect: (option) => selectModel(option.value),
       }),
     )
   }
