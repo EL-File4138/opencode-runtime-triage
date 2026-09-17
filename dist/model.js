@@ -1,25 +1,9 @@
-export const splitModel = (model) => {
-    if (!model)
-        return undefined;
-    const separator = model.indexOf("/");
-    if (separator < 1 || separator === model.length - 1)
-        return undefined;
-    return {
-        provider: model.slice(0, separator),
-        model: model.slice(separator + 1),
-    };
-};
-export const isSelectableModel = (provider, model, availableModels) => 
-// Native OpenCode models are not always included in the provider state.
-provider === "opencode" || availableModels?.[model] !== undefined;
-export const matchingProviderOverrides = (agents, runtimeModels, sourceProvider, targetProvider, targetModels) => [...agents].flatMap(([agent, config]) => {
-    if (config.disable)
+export const modelKey = (model) => `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}`;
+export const matchingProviderOverrides = (agents, source, target, models) => agents.flatMap((agent) => {
+    if (agent.model?.providerID !== source)
         return [];
-    const current = splitModel(runtimeModels?.get(agent) ?? config.model);
-    if (!current ||
-        current.provider !== sourceProvider ||
-        !targetModels.has(current.model)) {
+    const model = models.find((model) => model.providerID === target && model.id === agent.model.id);
+    if (!model || (agent.model.variant && !model.variants.some((v) => v.id === agent.model.variant)))
         return [];
-    }
-    return [{ agent, model: `${targetProvider}/${current.model}` }];
+    return [{ agent: agent.id, model: { ...agent.model, providerID: target } }];
 });

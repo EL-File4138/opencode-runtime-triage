@@ -1,42 +1,14 @@
-export const splitModel = (model: string | undefined) => {
-  if (!model) return undefined
-  const separator = model.indexOf("/")
-  if (separator < 1 || separator === model.length - 1) return undefined
-  return {
-    provider: model.slice(0, separator),
-    model: model.slice(separator + 1),
-  }
-}
-
-export const isSelectableModel = (
-  provider: string,
-  model: string,
-  availableModels: Readonly<Record<string, unknown>> | undefined,
-) =>
-  // Native OpenCode models are not always included in the provider state.
-  provider === "opencode" || availableModels?.[model] !== undefined
-
-type AgentConfig = {
-  model?: string
-  disable?: boolean
-}
-
+export type ModelRef = { providerID: string; id: string; variant?: string }
+export const modelKey = (model: ModelRef) =>
+  `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}`
 export const matchingProviderOverrides = (
-  agents: Iterable<[string, AgentConfig]>,
-  runtimeModels: ReadonlyMap<string, string> | undefined,
-  sourceProvider: string,
-  targetProvider: string,
-  targetModels: ReadonlySet<string>,
-) =>
-  [...agents].flatMap(([agent, config]) => {
-    if (config.disable) return []
-    const current = splitModel(runtimeModels?.get(agent) ?? config.model)
-    if (
-      !current ||
-      current.provider !== sourceProvider ||
-      !targetModels.has(current.model)
-    ) {
-      return []
-    }
-    return [{ agent, model: `${targetProvider}/${current.model}` }]
-  })
+  agents: readonly { id: string; model?: ModelRef }[],
+  source: string,
+  target: string,
+  models: readonly { providerID: string; id: string; variants: readonly { id: string }[] }[],
+) => agents.flatMap((agent) => {
+  if (agent.model?.providerID !== source) return []
+  const model = models.find((model) => model.providerID === target && model.id === agent.model!.id)
+  if (!model || (agent.model.variant && !model.variants.some((v) => v.id === agent.model!.variant))) return []
+  return [{ agent: agent.id, model: { ...agent.model, providerID: target } }]
+})

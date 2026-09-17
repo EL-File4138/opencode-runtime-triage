@@ -1,5 +1,3 @@
-import type { TuiPluginModule } from "@opencode-ai/plugin/tui";
-declare const plugin: TuiPluginModule & {
-    id: string;
-};
-export default plugin;
+import { Plugin } from "@opencode/plugin/tui";
+declare const _default: Plugin.Definition;
+export default _default;

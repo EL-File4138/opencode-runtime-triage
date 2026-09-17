@@ -1,253 +1,119 @@
-import { isSelectableModel, matchingProviderOverrides, splitModel, } from "./model.js";
-import { clearRuntimeModels, getRuntimeModels, restoreRuntimeModel, setRuntimeModel, } from "./state.js";
+import { Plugin } from "@opencode/plugin/tui";
+import { Runtime } from "./rpc.js";
+import { matchingProviderOverrides, modelKey } from "./model.js";
 const isPreset = (value) => {
     if (!value || typeof value !== "object")
         return false;
-    const preset = value;
-    return (typeof preset.label === "string" &&
-        typeof preset.provider === "string" &&
-        typeof preset.model === "string" &&
-        (preset.description === undefined || typeof preset.description === "string"));
+    const item = value;
+    return [item.label, item.provider, item.model].every((value) => typeof value === "string" && value.length > 0) &&
+        (item.variant === undefined || typeof item.variant === "string") &&
+        (item.description === undefined || typeof item.description === "string");
 };
-const tui = async (api, rawOptions) => {
-    const options = rawOptions;
-    const presets = (options?.presets ?? []).filter(isPreset);
-    clearRuntimeModels(api.state.path.directory);
-    const agentEntries = () => Object.entries(api.state.config.agent ?? {}).filter((entry) => entry[1] !== undefined);
-    const configuredModels = new Map(agentEntries().map(([agent, config]) => [
-        agent,
-        config.model,
-    ]));
-    const showError = (message) => {
-        api.ui.toast({
-            variant: "error",
-            title: "Runtime triage",
-            message,
-        });
-    };
-    const reload = async (directory) => {
-        const result = await api.client.instance.dispose({ directory });
-        return result.error;
-    };
-    const applyModel = async (agent, selection) => {
-        api.ui.dialog.clear();
-        const directory = api.state.path.directory;
-        const model = selection
-            ? `${selection.provider}/${selection.model}`
-            : undefined;
-        const previous = getRuntimeModels(directory)?.get(agent);
-        if (model)
-            setRuntimeModel(directory, agent, model);
-        else
-            restoreRuntimeModel(directory, agent, undefined);
-        try {
-            const error = await reload(directory);
-            if (error) {
-                restoreRuntimeModel(directory, agent, previous);
-                showError(`Could not reload ${agent}: ${JSON.stringify(error)}`);
-                return;
-            }
-            api.ui.toast({
-                variant: "success",
-                title: "Runtime model updated",
-                message: model
-                    ? `${agent} now uses ${model}`
-                    : `${agent} now uses its configured model`,
-            });
-        }
-        catch (error) {
-            restoreRuntimeModel(directory, agent, previous);
-            showError(`Could not reload ${agent}: ${String(error)}`);
-        }
-    };
-    const selectModel = (agent) => {
-        const directory = api.state.path.directory;
-        const current = getRuntimeModels(directory)?.get(agent) ??
-            api.state.config.agent?.[agent]?.model;
-        const providerAvailable = new Map(api.state.provider.map((provider) => [provider.id, provider.models]));
-        const models = new Map(api.state.provider.flatMap((provider) => Object.entries(provider.models).map(([model, details]) => [
-            `${provider.id}/${model}`,
-            {
-                label: details.name,
-                provider: provider.id,
-                model,
-            },
-        ])));
-        for (const preset of presets) {
-            models.set(`${preset.provider}/${preset.model}`, preset);
-        }
-        const modelOptions = [
-            {
-                title: "Use configured model",
-                value: null,
-                description: configuredModels.get(agent) ?? "Default model",
-                category: "Runtime",
-                disabled: !getRuntimeModels(directory)?.has(agent),
-            },
-            ...[...models.values()]
-                .map((selection) => ({
-                title: selection.label,
-                value: selection,
-                description: selection.description ?? `${selection.provider}/${selection.model}`,
-                category: selection.provider,
-                disabled: !isSelectableModel(selection.provider, selection.model, providerAvailable.get(selection.provider)),
-            }))
-                .sort((left, right) => left.category === right.category
-                ? left.title.localeCompare(right.title)
-                : left.category.localeCompare(right.category)),
-        ];
-        api.ui.dialog.replace(() => api.ui.DialogSelect({
-            title: `Model for ${agent}`,
-            placeholder: "Search available models",
-            current: current ? models.get(current) ?? null : null,
-            options: modelOptions,
-            onSelect: (option) => void applyModel(agent, option.value),
-        }));
-    };
-    const selectAgent = () => {
-        if (presets.length === 0 &&
-            api.state.provider.every((provider) => !Object.keys(provider.models).length)) {
-            showError("No provider models are available");
-            return;
-        }
-        const runtimeModels = getRuntimeModels(api.state.path.directory);
-        const agents = agentEntries()
-            .filter(([, config]) => !config.disable)
-            .sort(([left], [right]) => left.localeCompare(right));
-        if (agents.length === 0) {
-            showError("No configured agents are available");
-            return;
-        }
-        api.ui.dialog.replace(() => api.ui.DialogSelect({
-            title: "Select agent",
-            placeholder: "Search agents",
-            options: agents.map(([name, config]) => ({
-                title: name,
-                value: name,
-                description: runtimeModels?.get(name) ?? config.model ?? "Uses the default model",
-            })),
-            onSelect: (option) => selectModel(option.value),
-        }));
-    };
-    const applyProviderOverride = async (sourceProvider, targetProvider) => {
-        api.ui.dialog.clear();
-        const directory = api.state.path.directory;
-        const runtimeModels = getRuntimeModels(directory);
-        const targetModels = api.state.provider.find((provider) => provider.id === targetProvider)?.models;
-        if (!targetModels) {
-            showError(`Provider ${targetProvider} is not available`);
-            return;
-        }
-        const matches = matchingProviderOverrides(agentEntries(), runtimeModels, sourceProvider, targetProvider, new Set(Object.keys(targetModels)));
-        if (matches.length === 0) {
-            api.ui.toast({
-                variant: "warning",
-                title: "No matching models",
-                message: `${sourceProvider} and ${targetProvider} have no agent models in common`,
-            });
-            return;
-        }
-        const previous = new Map(matches.map(({ agent }) => [agent, runtimeModels?.get(agent)]));
-        for (const { agent, model } of matches) {
-            setRuntimeModel(directory, agent, model);
-        }
-        try {
-            const error = await reload(directory);
-            if (error) {
-                for (const [agent, model] of previous) {
-                    restoreRuntimeModel(directory, agent, model);
-                }
-                showError(`Could not reload agents: ${JSON.stringify(error)}`);
-                return;
-            }
-            api.ui.toast({
-                variant: "success",
-                title: "Runtime provider override",
-                message: `${sourceProvider} -> ${targetProvider} for ${matches.length} matching agent${matches.length === 1 ? "" : "s"}`,
-            });
-        }
-        catch (error) {
-            for (const [agent, model] of previous) {
-                restoreRuntimeModel(directory, agent, model);
-            }
-            showError(`Could not reload agents: ${String(error)}`);
-        }
-    };
-    const selectTargetProvider = (sourceProvider) => {
-        const runtimeModels = getRuntimeModels(api.state.path.directory);
-        const sourceModels = agentEntries().flatMap(([agent, config]) => {
-            if (config.disable)
-                return [];
-            const current = splitModel(runtimeModels?.get(agent) ?? config.model);
-            return current?.provider === sourceProvider ? [current.model] : [];
-        });
-        api.ui.dialog.replace(() => api.ui.DialogSelect({
-            title: `Override ${sourceProvider} with`,
-            placeholder: "Search target providers",
-            options: api.state.provider
-                .filter((provider) => provider.id !== sourceProvider)
-                .map((provider) => {
-                const matchCount = sourceModels.filter((model) => provider.models[model]).length;
-                return {
-                    title: provider.name,
-                    value: provider.id,
-                    description: `${provider.id} (${matchCount} matching agent model${matchCount === 1 ? "" : "s"})`,
-                    disabled: matchCount === 0,
-                };
-            })
-                .sort((left, right) => left.title.localeCompare(right.title)),
-            onSelect: (option) => void applyProviderOverride(sourceProvider, option.value),
-        }));
-    };
-    const selectSourceProvider = () => {
-        const runtimeModels = getRuntimeModels(api.state.path.directory);
-        const providerCounts = new Map();
-        for (const [agent, config] of agentEntries()) {
-            if (config.disable)
-                continue;
-            const current = splitModel(runtimeModels?.get(agent) ?? config.model);
-            if (!current)
-                continue;
-            providerCounts.set(current.provider, (providerCounts.get(current.provider) ?? 0) + 1);
-        }
-        api.ui.dialog.replace(() => api.ui.DialogSelect({
-            title: "Select provider to override",
-            placeholder: "Search providers used by agents",
-            options: [...providerCounts]
-                .map(([provider, count]) => ({
-                title: api.state.provider.find((item) => item.id === provider)?.name ??
-                    provider,
-                value: provider,
-                description: `${provider} (${count} agent${count === 1 ? "" : "s"})`,
-            }))
-                .sort((left, right) => left.title.localeCompare(right.title)),
-            onSelect: (option) => selectTargetProvider(option.value),
-        }));
-    };
-    api.command.register(() => [
-        {
-            title: "Runtime model override",
-            value: "runtime-triage.model",
-            description: "Temporarily assign a provider/model pair to an agent",
-            category: "Runtime Triage",
-            slash: { name: "rt-model" },
-            onSelect: selectAgent,
-        },
-        {
-            title: "Runtime provider override",
-            value: "runtime-triage.provider",
-            description: "Temporarily replace a provider where model IDs overlap",
-            category: "Runtime Triage",
-            slash: { name: "rt-provider" },
-            onSelect: selectSourceProvider,
-        },
-    ]);
-    api.lifecycle.onDispose(() => {
-        clearRuntimeModels(api.state.path.directory);
-    });
-};
-const plugin = {
+export default Plugin.define({
     id: "opencode-runtime-triage.tui",
-    tui,
-};
-export default plugin;
+    setup(ctx) {
+        const rpc = ctx.client.rpc(Runtime);
+        const owner = crypto.randomUUID();
+        const locations = new Map();
+        const presets = Array.isArray(ctx.options.presets) ? ctx.options.presets.filter(isPreset) : [];
+        const location = () => ctx.location ?? ctx.data.location.default();
+        const toast = (message, variant = "success") => ctx.ui.toast.show({ title: "Runtime triage", message, variant });
+        const apply = async (at, changes) => {
+            await rpc.apply({ owner, changes }, { location: at });
+            locations.set(at.directory, at);
+            await ctx.data.location.agent.sync(at);
+            toast(`Updated ${changes.length} agent${changes.length === 1 ? "" : "s"}`);
+        };
+        const guard = (run) => async () => {
+            try {
+                await run();
+            }
+            catch (error) {
+                toast(String(error), "error");
+            }
+        };
+        const selectModel = guard(async () => {
+            const at = location();
+            const [agents, catalog] = await Promise.all([ctx.client.agent.list({ location: at }), ctx.client.model.list({ location: at })]);
+            const agentID = await ctx.ui.dialog.select({
+                title: "Select agent", placeholder: "Search agents",
+                options: agents.data.map((agent) => ({ title: agent.name, value: agent.id, description: agent.model ? modelKey(agent.model) : "Default model" })),
+            });
+            if (agentID === undefined)
+                return;
+            const models = new Map();
+            const refs = new Map();
+            for (const model of catalog.data) {
+                for (const variant of [undefined, ...model.variants.map((variant) => variant.id)]) {
+                    const ref = { providerID: model.providerID, id: model.id, ...(variant ? { variant } : {}) };
+                    const key = modelKey(ref);
+                    refs.set(key, ref);
+                    models.set(key, { title: `${model.name}${variant ? ` (${variant})` : ""}`, value: key, category: model.providerID, description: key });
+                }
+            }
+            for (const preset of presets) {
+                const key = modelKey({ providerID: preset.provider, id: preset.model, variant: preset.variant });
+                const option = models.get(key);
+                if (option)
+                    models.set(key, { ...option, title: preset.label, description: preset.description ?? key });
+            }
+            const current = agents.data.find((agent) => agent.id === agentID)?.model;
+            const selected = await ctx.ui.dialog.select({
+                title: `Model for ${agentID}`, placeholder: "Search available models",
+                current: current ? modelKey(current) : null,
+                options: [
+                    { title: "Restore model", value: null, category: "Runtime", description: "Remove this terminal's override" },
+                    ...[...models.values()].sort((a, b) => a.category.localeCompare(b.category) || a.title.localeCompare(b.title)),
+                ],
+            });
+            if (selected === undefined)
+                return;
+            await apply(at, [{ agent: agentID, model: selected === null ? null : refs.get(selected) }]);
+        });
+        const selectProvider = guard(async () => {
+            const at = location();
+            const [agents, models, providers] = await Promise.all([
+                ctx.client.agent.list({ location: at }), ctx.client.model.list({ location: at }), ctx.client.provider.list({ location: at }),
+            ]);
+            const source = await ctx.ui.dialog.select({
+                title: "Select provider to override",
+                options: [...new Set(agents.data.flatMap((agent) => agent.model ? [agent.model.providerID] : []))].sort().map((id) => ({ title: id, value: id })),
+            });
+            if (source === undefined)
+                return;
+            const target = await ctx.ui.dialog.select({
+                title: `Override ${source} with`,
+                options: providers.data.filter((provider) => provider.id !== source).map((provider) => {
+                    const count = matchingProviderOverrides(agents.data, source, provider.id, models.data).length;
+                    return { title: provider.name, value: provider.id, description: `${count} matching agents`, disabled: count === 0 };
+                }),
+            });
+            if (target === undefined)
+                return;
+            const changes = matchingProviderOverrides(agents.data, source, target, models.data);
+            if (!changes.length) {
+                toast("No matching models and variants", "warning");
+                return;
+            }
+            await apply(at, changes);
+        });
+        ctx.ui.slot({ append: "app", render: () => {
+                ctx.keymap.layer(() => ({
+                    mode: "global",
+                    commands: [
+                        { id: "runtime-triage.model", title: "Runtime model override", group: "Runtime Triage", palette: true, slash: { name: "rt-model" }, run: selectModel },
+                        { id: "runtime-triage.provider", title: "Runtime provider override", group: "Runtime Triage", palette: true, slash: { name: "rt-provider" }, run: selectProvider },
+                    ],
+                }));
+                return null;
+            } });
+        const timer = setInterval(() => {
+            for (const at of locations.values())
+                void rpc.heartbeat({ owner }, { location: at }).catch((error) => toast(String(error), "error"));
+        }, 20_000);
+        return async () => {
+            clearInterval(timer);
+            await Promise.allSettled([...locations.values()].map((at) => rpc.release({ owner }, { location: at })));
+        };
+    },
+});

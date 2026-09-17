@@ -1,79 +1,37 @@
-import { describe, expect, test } from "bun:test"
-import {
-  isSelectableModel,
-  matchingProviderOverrides,
-  splitModel,
-} from "../src/model.js"
+import { expect, test } from "bun:test"
+import { matchingProviderOverrides, modelKey } from "../src/model.js"
+import { RuntimeState } from "../src/state.js"
 
-describe("splitModel", () => {
-  test("splits only on the first slash", () => {
-    expect(splitModel("provider/family/model")).toEqual({
-      provider: "provider",
-      model: "family/model",
-    })
-  })
-
-  test("rejects incomplete identifiers", () => {
-    expect(splitModel("provider")).toBeUndefined()
-    expect(splitModel("/model")).toBeUndefined()
-    expect(splitModel("provider/")).toBeUndefined()
-  })
+test("model references retain slashes and variants", () => {
+  expect(modelKey({ providerID: "p", id: "family/model", variant: "high" })).toBe("p/family/model#high")
 })
-
-describe("isSelectableModel", () => {
-  test("allows native OpenCode models without a provider-state entry", () => {
-    expect(isSelectableModel("opencode", "gpt-5-nano", undefined)).toBe(true)
-  })
-
-  test("requires external models to be present in provider state", () => {
-    expect(isSelectableModel("anthropic", "claude-sonnet", undefined)).toBe(
-      false,
-    )
-    expect(
-      isSelectableModel("anthropic", "claude-sonnet", {
-        "claude-sonnet": {},
-      }),
-    ).toBe(true)
-  })
+test("provider replacement requires matching model and variant", () => {
+  const agents = [
+    { id: "build", model: { providerID: "a", id: "m", variant: "high" } },
+    { id: "other", model: { providerID: "b", id: "m" } },
+    { id: "missing", model: { providerID: "a", id: "missing" } },
+  ]
+  expect(matchingProviderOverrides(agents, "a", "b", [{ providerID: "b", id: "m", variants: [] }])).toEqual([])
+  expect(matchingProviderOverrides(agents, "a", "b", [{ providerID: "b", id: "m", variants: [{ id: "high" }] }])).toEqual([
+    { agent: "build", model: { providerID: "b", id: "m", variant: "high" } },
+  ])
 })
-
-describe("matchingProviderOverrides", () => {
-  test("overrides only the source and target model intersection", () => {
-    const agents: Array<[string, { model?: string; disable?: boolean }]> = [
-      ["build", { model: "source/sol" }],
-      ["explore", { model: "source/terra" }],
-      ["summary", { model: "source/luna" }],
-      ["general", { model: "other/sol" }],
-      ["disabled", { model: "source/sol", disable: true }],
-    ]
-
-    expect(
-      matchingProviderOverrides(
-        agents,
-        undefined,
-        "source",
-        "target",
-        new Set(["sol", "terra"]),
-      ),
-    ).toEqual([
-      { agent: "build", model: "target/sol" },
-      { agent: "explore", model: "target/terra" },
-    ])
-  })
-
-  test("uses active runtime models when matching", () => {
-    const agents: Array<[string, { model?: string }]> = [
-      ["build", { model: "configured/sol" }],
-    ]
-
-    expect(
-      matchingProviderOverrides(
-        agents,
-        new Map([["build", "source/sol"]]),
-        "source",
-        "target",
-        new Set(["sol"]),
-      ),
-    ).toEqual([{ agent: "build", model: "target/sol" }])
-  })
+test("releasing one terminal reveals another terminal's override", () => {
+  const state = new RuntimeState()
+  state.set("one", [{ agent: "build", model: { providerID: "a", id: "one" } }])
+  state.set("two", [{ agent: "build", model: { providerID: "a", id: "two" } }])
+  expect(state.models().get("build")?.id).toBe("two")
+  state.release("two")
+  expect(state.models().get("build")?.id).toBe("one")
+  state.set("one", [{ agent: "build", model: null }])
+  expect(state.models().size).toBe(0)
+})
+test("lease expiry clears crashed terminals and heartbeat retains live ones", () => {
+  let now = 0
+  const state = new RuntimeState(() => now, 100)
+  state.set("dead", [{ agent: "build", model: { providerID: "a", id: "one" } }])
+  state.set("live", [{ agent: "plan", model: { providerID: "a", id: "two" } }])
+  now = 80; state.touch("live"); now = 100
+  expect(state.expire()).toBe(true)
+  expect([...state.models().keys()]).toEqual(["plan"])
 })

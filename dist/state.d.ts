@@ -1,4 +1,20 @@
-export declare const getRuntimeModels: (directory: string) => Map<string, string> | undefined;
-export declare const setRuntimeModel: (directory: string, agent: string, model: string) => string | undefined;
-export declare const restoreRuntimeModel: (directory: string, agent: string, model: string | undefined) => void;
-export declare const clearRuntimeModels: (directory: string) => void;
+import type { ModelRef } from "./model.js";
+export declare class RuntimeState {
+    private readonly now;
+    private readonly ttl;
+    private owners;
+    private order;
+    constructor(now?: () => number, ttl?: number);
+    checkpoint(): () => void;
+    touch(owner: string): {
+        expires: number;
+        models: Map<any, any>;
+    };
+    set(owner: string, changes: readonly {
+        agent: string;
+        model: ModelRef | null;
+    }[]): void;
+    release(owner: string): boolean;
+    expire(): boolean;
+    models(): Map<string, ModelRef>;
+}
