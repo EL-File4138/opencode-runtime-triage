@@ -3,10 +3,15 @@ export declare const Runtime: {
     readonly id: "runtime-triage";
     readonly events: {};
     readonly methods: {
+        readonly instance: {
+            readonly output: z.ZodString;
+            readonly input: z.ZodObject<{}, z.core.$strip>;
+        };
         readonly apply: {
             readonly output: z.ZodNull;
             readonly input: z.ZodObject<{
                 owner: z.ZodString;
+                sessionID: z.ZodOptional<z.ZodString>;
                 changes: z.ZodArray<z.ZodObject<{
                     agent: z.ZodString;
                     model: z.ZodNullable<z.ZodObject<{

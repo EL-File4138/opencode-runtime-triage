@@ -6,7 +6,8 @@ export const Runtime = Rpc.define({
   id: "runtime-triage",
   events: {},
   methods: {
-    apply: { output: z.null(), input: owner.extend({ changes: z.array(z.object({ agent: z.string().min(1), model: model.nullable() })).max(1000) }) },
+    instance: { output: z.string(), input: z.object({}) },
+    apply: { output: z.null(), input: owner.extend({ sessionID: z.string().min(1).optional(), changes: z.array(z.object({ agent: z.string().min(1), model: model.nullable() })).max(1000) }) },
     heartbeat: { output: z.null(), input: owner },
     release: { output: z.null(), input: owner },
   },

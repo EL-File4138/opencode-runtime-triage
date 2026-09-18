@@ -13,7 +13,7 @@ export declare class RuntimeState {
     set(owner: string, changes: readonly {
         agent: string;
         model: ModelRef | null;
-    }[]): void;
+    }[], persistent?: boolean): void;
     release(owner: string): boolean;
     expire(): boolean;
     models(): Map<string, ModelRef>;

@@ -22,9 +22,12 @@ export default Plugin.define({
     const toast = (message: string, variant: "success" | "error" | "warning" = "success") =>
       ctx.ui.toast.show({ title: "Runtime triage", message, variant })
     const apply = async (at: { directory: string }, changes: { agent: string; model: ModelRef | null }[]) => {
-      await rpc.apply({ owner, changes }, { location: at })
+      const route = ctx.ui.router.current()
+      const sessionID = route.type === "session" ? route.sessionID : undefined
+      await rpc.apply({ owner, changes, sessionID }, { location: at })
       locations.set(at.directory, at)
       await ctx.data.location.agent.sync(at)
+      if (sessionID) await ctx.data.session.sync(sessionID)
       toast(`Updated ${changes.length} agent${changes.length === 1 ? "" : "s"}`)
     }
     const guard = (run: () => Promise<void>) => async () => {

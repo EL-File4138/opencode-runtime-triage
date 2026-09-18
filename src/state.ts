@@ -15,8 +15,9 @@ export class RuntimeState {
     this.owners.set(owner, state)
     return state
   }
-  set(owner: string, changes: readonly { agent: string; model: ModelRef | null }[]) {
+  set(owner: string, changes: readonly { agent: string; model: ModelRef | null }[], persistent = false) {
     const state = this.touch(owner)
+    if (persistent) state.expires = Infinity
     for (const { agent, model } of changes) {
       if (model) state.models.set(agent, { model: { ...model }, order: ++this.order })
       else state.models.delete(agent)
