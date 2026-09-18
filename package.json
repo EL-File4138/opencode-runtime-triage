@@ -53,6 +53,7 @@
     "typescript": "^5.8.2"
   },
   "dependencies": {
+    "@opencode/client": "2.0.6",
     "@opencode/plugin": "2.0.6",
     "zod": "4.1.8"
   }
