@@ -8,6 +8,7 @@ const selectionKey = (model: ModelRef) => modelKey({ ...model, variant: model.va
 // selection so releasing a runtime layer can undo only changes that we still own.
 export class RuntimeSessions {
   private selected = new Map<string, { original: ModelRef; applied: ModelRef }>()
+  private manual = new Map<string, string>()
   constructor(private readonly ctx: Plugin.Context) {}
 
   async check(sessionID: string) {
@@ -16,8 +17,10 @@ export class RuntimeSessions {
     return session
   }
 
-  async sync(models: ReadonlyMap<string, ModelRef>, sessionID?: string) {
+  async sync(models: ReadonlyMap<string, ModelRef>, sessionID?: string, force = false) {
+    if (force && sessionID) this.manual.delete(sessionID)
     const ids = new Set(this.selected.keys())
+    for (const id of this.manual.keys()) ids.add(id)
     if (sessionID) ids.add(sessionID)
     for (const id of ids) {
       const session = await this.ctx.session.get({ sessionID: id }).catch((error: unknown) => {
@@ -34,7 +37,14 @@ export class RuntimeSessions {
       if (previous && (!session.model || selectionKey(session.model) !== selectionKey(previous.applied))) {
         this.selected.delete(id)
         previous = undefined
-        if (id !== sessionID) continue
+        if (session.model) this.manual.set(id, selectionKey(session.model))
+        continue
+      }
+      // Keep a manual /models choice until an explicit runtime command forces a new override.
+      const manual = this.manual.get(id)
+      if (manual) {
+        if (session.model && selectionKey(session.model) !== manual) this.manual.set(id, selectionKey(session.model))
+        continue
       }
       const target = session.agent ? models.get(session.agent) : undefined
       if (!target) {

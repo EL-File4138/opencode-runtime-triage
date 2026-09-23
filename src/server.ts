@@ -40,7 +40,7 @@ export default Plugin.define({
         // overwrite runtime selections during registry replay.
         if (!registration) registration = await transform()
         await ctx.agent.reload()
-        await sessions.sync(state.models(), input.sessionID)
+        await sessions.sync(state.models(), input.sessionID, true)
       } catch (error) {
         rollback()
         await ctx.agent.reload()

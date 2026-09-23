@@ -6,6 +6,7 @@ const selectionKey = (model) => modelKey({ ...model, variant: model.variant === 
 export class RuntimeSessions {
     ctx;
     selected = new Map();
+    manual = new Map();
     constructor(ctx) {
         this.ctx = ctx;
     }
@@ -15,8 +16,12 @@ export class RuntimeSessions {
             throw new Error("Session belongs to another location");
         return session;
     }
-    async sync(models, sessionID) {
+    async sync(models, sessionID, force = false) {
+        if (force && sessionID)
+            this.manual.delete(sessionID);
         const ids = new Set(this.selected.keys());
+        for (const id of this.manual.keys())
+            ids.add(id);
         if (sessionID)
             ids.add(sessionID);
         for (const id of ids) {
@@ -36,8 +41,16 @@ export class RuntimeSessions {
             if (previous && (!session.model || selectionKey(session.model) !== selectionKey(previous.applied))) {
                 this.selected.delete(id);
                 previous = undefined;
-                if (id !== sessionID)
-                    continue;
+                if (session.model)
+                    this.manual.set(id, selectionKey(session.model));
+                continue;
+            }
+            // Keep a manual /models choice until an explicit runtime command forces a new override.
+            const manual = this.manual.get(id);
+            if (manual) {
+                if (session.model && selectionKey(session.model) !== manual)
+                    this.manual.set(id, selectionKey(session.model));
+                continue;
             }
             const target = session.agent ? models.get(session.agent) : undefined;
             if (!target) {

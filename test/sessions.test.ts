@@ -43,3 +43,31 @@ test("session overrides restore the original selection across layers and agent c
   session.location = { directory: "/other" }
   await expect(runtime.check("ses_test")).rejects.toThrow("another location")
 })
+
+test("manual model selections are preserved until a runtime command forces an override", async () => {
+  const runtime = { providerID: "runtime", id: "model" }
+  const manual = { providerID: "manual", id: "model" }
+  const session: { agent: string; model?: ModelRef; location: { directory: string } } = {
+    agent: "build", model: { providerID: "original", id: "model" }, location: { directory: "/test" },
+  }
+  const ctx = {
+    location: session.location,
+    session: {
+      get: async () => structuredClone(session),
+      switchModel: async ({ model }: { model: ModelRef }) => { session.model = { ...model, variant: model.variant ?? "default" } },
+    },
+    model: { default: async () => ({ data: session.model }) },
+  }
+  const sessions = new RuntimeSessions(ctx as unknown as Plugin.Context)
+  const target = new Map([["build", runtime]])
+
+  await sessions.sync(target, "ses_test")
+  session.model = { ...manual, variant: "default" }
+  await sessions.sync(target, "ses_test")
+  expect(session.model).toEqual({ ...manual, variant: "default" })
+  await sessions.sync(target, "ses_test")
+  expect(session.model).toEqual({ ...manual, variant: "default" })
+
+  await sessions.sync(target, "ses_test", true)
+  expect(session.model).toEqual({ ...runtime, variant: "default" })
+})
