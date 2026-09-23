@@ -1,0 +1,60 @@
+{
+  "name": "opencode-runtime-triage",
+  "version": "1.0.3",
+  "description": "Runtime-only per-agent model and provider overrides for the OpenCode TUI",
+  "type": "module",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    "./tui": {
+      "types": "./dist/tui.d.ts",
+      "import": "./dist/tui.js"
+    },
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "index.ts",
+    "tui.ts",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test",
+    "prepack": "npm run clean && npm run build",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "tui",
+    "model-routing"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/EL-File4138/opencode-runtime-triage.git"
+  },
+  "homepage": "https://github.com/EL-File4138/opencode-runtime-triage#readme",
+  "bugs": {
+    "url": "https://github.com/EL-File4138/opencode-runtime-triage/issues"
+  },
+  "license": "Unlicense",
+  "engines": {
+    "opencode": ">=2.0.6 <3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@opencode/client": "2.0.6",
+    "@opencode/plugin": "2.0.6",
+    "zod": "4.1.8"
+  }
+}

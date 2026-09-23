@@ -1,0 +1,9 @@
+export const modelKey = (model) => `${model.providerID}/${model.id}${model.variant ? `#${model.variant}` : ""}`;
+export const matchingProviderOverrides = (agents, source, target, models) => agents.flatMap((agent) => {
+    if (agent.model?.providerID !== source)
+        return [];
+    const model = models.find((model) => model.providerID === target && model.id === agent.model.id);
+    if (!model || (agent.model.variant && !model.variants.some((v) => v.id === agent.model.variant)))
+        return [];
+    return [{ agent: agent.id, model: { ...agent.model, providerID: target } }];
+});
